@@ -1,5 +1,3 @@
-
-
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -33,15 +31,7 @@ app.get("/", (req, res) => {
         message: 'Successful render'
     })
 });
-
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname));
-    }
-});
+const storage = multer.memoryStorage();  // Store the file in memory instead of disk
 
 const upload = multer({ storage: storage });
 
@@ -50,10 +40,7 @@ function getRandomValue(arr) {
 }
 
 app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
-
     try {
-
-
         const { candidates, textField } = req.body;
         const file = req.file;
 
@@ -61,12 +48,11 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
             return res.status(400).send({ error: 'No file uploaded' });
         }
 
-        const workbook = xlsx.readFile(file.path);
+        const workbook = xlsx.read(file.buffer);  // Read the file buffer instead of a file path
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
 
         const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-        // console.log('data::::', data);
 
         const keys = data[0];  // The first row as keys (section names)
         const result = {};
@@ -75,14 +61,9 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
             result[key] = data.slice(1, -2).map(row => row[index]).filter(value => value !== undefined);
         });
 
-        // console.log('result:::::', result);
-
         // Extract max and weightage values from the last two rows
         const maxRow = data[data.length - 2];
         const weightageRow = data[data.length - 1];
-
-        // console.log('max row::::::', maxRow);
-        // console.log('weightage::::::::', weightageRow);
 
         // Validate max and weightage values
         keys.forEach((key, index) => {
@@ -99,8 +80,6 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
 
         // Initialize the array to hold rows for the first Excel sheet
         const rows = [headers];
-
-        // console.log('rows::::::::::', rows);
 
         // Array to store random values for the second Excel sheet calculations
         const randomValues = [];
@@ -136,7 +115,7 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
                 const weightage = weightageRow[index];
                 const calculatedValue = (randomValue * weightage) / max;
 
-                calculatedRow.push(Math.round(calculatedValue));  // Formatting the calculated value to 2 decimal places
+                calculatedRow.push(Math.round(calculatedValue));  // Rounding the calculated value to nearest integer
                 sum += calculatedValue;
             });
 
@@ -144,7 +123,7 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
             calculatedRows.push(calculatedRow);
         });
 
-        // Create a single Excel workbook with two sheets
+        // Create a single Excel workbook with two sheets in memory
         const workbookOutput = xlsx.utils.book_new();
         const firstWorksheet = xlsx.utils.aoa_to_sheet(rows);
         const secondWorksheet = xlsx.utils.aoa_to_sheet(calculatedRows);
@@ -152,32 +131,19 @@ app.post('/upload-and-generate', upload.single('fileField'), (req, res) => {
         xlsx.utils.book_append_sheet(workbookOutput, firstWorksheet, 'Randomized Values');
         xlsx.utils.book_append_sheet(workbookOutput, secondWorksheet, 'Calculated Values');
 
-        const filePath = path.join(__dirname, `generated_values_${Date.now()}.xlsx`);
-        xlsx.writeFile(workbookOutput, filePath);
+        // Write the workbook to a buffer
+        const excelBuffer = xlsx.write(workbookOutput, { type: 'buffer', bookType: 'xlsx' });
 
-        // Send the Excel file back to the client
-        res.download(filePath, `${textField}.xlsx`, (err) => {
-            if (err) {
-                console.error('Error sending the Excel file:', err);
-            }
+        // Set the response headers to indicate a file download
+        res.setHeader('Content-Disposition', `attachment; filename="${textField}.xlsx"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
-            // Clean up the Excel file after sending
-            fs.unlink(filePath, (err) => {
-                if (err) {
-                    console.error('Error deleting the Excel file:', err);
-                }
-            });
-
-            // Optionally delete the original uploaded file as well
-            fs.unlink(file.path, (err) => {
-                if (err) {
-                    console.error('Error deleting the uploaded file:', err);
-                }
-            });
-        });
+        // Send the buffer as the response
+        res.send(excelBuffer);
 
     } catch (err) {
-        console.log('this is the error', err)
+        console.log('this is the error', err);
+        res.status(500).send({ error: 'An error occurred while processing the file' });
     }
 });
 

@@ -41,18 +41,18 @@
 <script>
     $('document').ready(function() {
         console.log('document is rendered');
-        $('#uploadForm').on('submit', function (e) {
+        document.getElementById('uploadForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            
+        
             const fileInput = document.getElementById('fileField');
             const textField = document.getElementById('textField').value;
-            const candidates = $('#candidates').val();
-    
+            const candidates = document.getElementById('candidates').value;
+        
             const formData = new FormData();
             formData.append('fileField', fileInput.files[0]);  // Append the file
-            formData.append('candidates', candidates);  // Append the number of candidates (as you specified)
+            formData.append('candidates', candidates);  // Append the number of candidates
             formData.append('textField', textField);  // Append the report name
-            
+        
             fetch('/upload-and-generate', {
                 method: 'POST',
                 body: formData
@@ -66,12 +66,14 @@
                 link.setAttribute('download', `${textField}.xlsx`);
                 document.body.appendChild(link);
                 link.click();
-                link.parentNode.removeChild(link);
-                $('#fileField').val('');
-                $('#textField').val('');
+                document.body.removeChild(link);
+        
+                // Clear the input fields
+                fileInput.value = '';
+                document.getElementById('textField').value = '';
             })
             .catch(error => console.error('Error:', error));
-        });
+        });        
     });
     
 </script>
